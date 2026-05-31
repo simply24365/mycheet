@@ -1,0 +1,80 @@
+@import "@fontsource-variable/inter/wght.css";
+@import "pretendard/dist/web/variable/pretendardvariable.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* shadcn neutral dark */
+    --background:  0 0% 3.9%;
+    --foreground:  0 0% 98%;
+    --card:        0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover:     0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary:     0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary:   0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted:       0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent:      0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border:      0 0% 14.9%;
+    --input:       0 0% 14.9%;
+    --ring:        0 0% 83.1%;
+    --radius:      0.5rem;
+  }
+}
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #app { width: 100%; height: 100%; overflow: hidden; }
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Inter Variable", "Pretendard Variable", "Segoe UI Variable Text", "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    font-size: 13px;
+    font-optical-sizing: auto;
+    font-synthesis: none;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+}
+
+/* Thin scrollbars */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { @apply bg-border rounded-sm; }
+::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground/40; }
+
+/* Markdown content styles (postit viewer) */
+.md-content { user-select: text; }
+.md-content h1, .md-content h2, .md-content h3 { font-weight: 700; margin: 8px 0 3px; }
+.md-content h1 { font-size: 1.05rem; }
+.md-content h2 { font-size: 0.95rem; }
+.md-content h3 { font-size: 0.875rem; }
+.md-content p  { margin: 3px 0; }
+.md-content ul, .md-content ol { padding-left: 16px; margin: 3px 0; }
+.md-content li { margin: 1px 0; }
+.md-content code {
+  @apply bg-muted rounded text-[0.8rem] font-mono;
+  padding: 1px 4px;
+}
+.md-content pre {
+  @apply bg-muted rounded-md overflow-x-auto;
+  padding: 8px 10px; margin: 5px 0;
+}
+.md-content pre code { background: none; padding: 0; }
+.md-content a { @apply text-foreground underline underline-offset-2 opacity-80; }
+.md-content hr { @apply border-none border-t border-border; margin: 6px 0; }
+.md-content table { border-collapse: collapse; width: 100%; margin: 5px 0; font-size: 0.75rem; }
+.md-content th, .md-content td { @apply border border-border; padding: 3px 7px; }
+.md-content th { @apply bg-muted font-semibold; }
+.md-content blockquote {
+  @apply border-l-2 border-border text-muted-foreground;
+  margin: 4px 0; padding-left: 10px;
+}
