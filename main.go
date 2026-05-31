@@ -48,8 +48,7 @@ func main() {
 		Frameless:        true,
 		URL:              "/?mode=settings",
 		Hidden:           true,
-		BackgroundType:   application.BackgroundTypeTransparent,
-		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
+		BackgroundColour: application.NewRGB(10, 10, 10),
 		Windows: application.WindowsWindow{
 			Theme: application.SystemDefault,
 		},

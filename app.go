@@ -144,6 +144,7 @@ func (a *App) Init() {
 
 	a.rebuildHotkeys()
 	a.registerCommandPaletteHotkey()
+	a.startWatcher()
 }
 
 // --- Wails service methods ---
@@ -520,18 +521,8 @@ func (a *App) SetAutostartEnabled(enable bool) error {
 }
 
 // InitWindowsAndTray is called by the frontend after it is ready.
-// Creates postit windows and returns.
+// Windows are created lazily on first TogglePostitWindow call.
 func (a *App) InitWindowsAndTray() error {
-	a.mu.Lock()
-	postits := make([]PostIt, len(a.cfg.PostIts))
-	copy(postits, a.cfg.PostIts)
-	a.mu.Unlock()
-
-	for _, p := range postits {
-		if err := a.openPostitWindow(p.ID); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
