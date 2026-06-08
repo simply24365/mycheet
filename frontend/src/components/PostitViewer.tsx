@@ -2,7 +2,7 @@ import { type CSSProperties, useState, useEffect, useCallback } from "react";
 import { Events, Window } from "@wailsio/runtime";
 import { SquarePen } from "lucide-react";
 import { marked } from "marked";
-import * as App from "../../bindings/mycheet/app";
+import * as App from "@bindings/mycheet/app";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 

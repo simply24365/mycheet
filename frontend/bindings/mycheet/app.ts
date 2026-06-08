@@ -123,19 +123,11 @@ export function HideCommandPalette(): $CancellablePromise<void> {
 }
 
 /**
- * Init loads config, starts the file watcher, and registers hotkeys.
- * Called after SetSettingsWin, before app.Run().
+ * Init loads config, migrates paths, starts the watcher, and registers hotkeys.
+ * Called by main.go after window references are wired up.
  */
 export function Init(): $CancellablePromise<void> {
     return $Call.ByID(2832927211);
-}
-
-/**
- * InitWindowsAndTray is called by the frontend after it is ready.
- * Windows are created lazily on first TogglePostitWindow call.
- */
-export function InitWindowsAndTray(): $CancellablePromise<void> {
-    return $Call.ByID(3562779129);
 }
 
 /**
@@ -173,6 +165,16 @@ export function SetAutostartEnabled(enable: boolean): $CancellablePromise<void> 
  */
 export function SetBaseDir(dir: string): $CancellablePromise<void> {
     return $Call.ByID(1736883101, dir);
+}
+
+/**
+ * SetHotkeySuspended toggles whether the registered hotkey goroutines should
+ * fire their actions. The frontend calls this while the hotkey recorder is
+ * active so the key combo the user is trying to capture does not also toggle
+ * a postit window through the native Win32 hotkey channel.
+ */
+export function SetHotkeySuspended(suspended: boolean): $CancellablePromise<void> {
+    return $Call.ByID(2576903566, suspended);
 }
 
 /**

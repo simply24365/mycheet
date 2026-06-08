@@ -14,6 +14,7 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "./src"),
       "src": path.resolve(__dirname, "./src"),
+      "@bindings": path.resolve(__dirname, "./bindings"),
     },
   },
   build: {

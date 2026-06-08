@@ -1,7 +1,7 @@
 # Battery Efficiency Analysis — mycheet
 
-> 분석 기준일: 2026-05-31  
-> 대상: `app.go`, `main.go`, `frontend/src/**`
+> 분석 기준일: 2026-05-31 (최종 갱신 2026-06-08)  
+> 대상: `app*.go`, `main.go`, `frontend/src/**`
 
 ---
 
@@ -10,10 +10,10 @@
 | 항목 | 평가 | 비고 |
 |---|---|---|
 | 전역 단축키 (hotkey) | ✅ 효율적 | OS `RegisterHotKey` — 인터럽트 기반, idle 시 CPU 0 |
-| 파일 감시 (fsnotify) | ⚠️ 사실상 미동작 | `startWatcher()` 미호출 — 아래 참고 |
+| 파일 감시 (fsnotify) | ✅ 활성 | `Init()` 에서 `startWatcher()` 호출 — `app_watcher.go` |
 | 프론트엔드 이벤트 루프 | ✅ 효율적 | setInterval/setTimeout 없음, RAF 1회성 사용 |
 | 트레이 아이콘 | ✅ 효율적 | OS 메시지 루프 기반 |
-| 숨김 WebView2 인스턴스 | ⚠️ 개선 여지 | 노트 수만큼 상시 프로세스 유지 |
+| 숨김 WebView2 인스턴스 | ✅ Lazy | `openPostitWindow` 가 첫 `TogglePostitWindow` 호출 시 생성 — `app_window.go` |
 
 ---
 
@@ -33,26 +33,13 @@ case <-hk.Keydown():
 
 ---
 
-### ⚠️ 파일 감시 (fsnotify) — 미동작 버그
+### ✅ 파일 감시 (fsnotify)
 
-`startWatcher()` 함수가 정의되어 있지만 **`Init()`에서 호출되지 않는다.**  
-결과적으로 `a.watcher == nil` 이므로 `watchFile()` 도 no-op, `file-changed-externally` 이벤트는 절대 발생하지 않는다.
+`app_watcher.go` 의 `startWatcher()` 가 `app.go` 의 `Init()` 마지막 줄에서 호출된다.  
+fsnotify 는 OS 커널 이벤트(`ReadDirectoryChangesW`) 기반이므로 idle 시 CPU 0이다.
 
-```go
-// app.go:135 — startWatcher() 호출 누락
-func (a *App) Init() {
-    ...
-    a.rebuildHotkeys()
-    a.registerCommandPaletteHotkey()
-    // startWatcher() 없음!
-}
-```
-
-**배터리 관점:** 오히려 watcher가 꺼져 있어 OS 핸들이 열리지 않으므로 의도치 않게 효율적이다.  
-다만 외부 편집기로 노트를 수정해도 앱에 반영되지 않는 **기능 버그**이기도 하다.
-
-> 필요하다면 `Init()` 마지막에 `a.startWatcher()` 를 추가하면 된다.  
-> fsnotify는 OS 커널 이벤트(`ReadDirectoryChangesW`) 기반이므로 활성화해도 배터리 영향은 미미하다.
+> 2026-06 기준: `startWatcher()` 가 Write 이벤트를 받지만 더 이상 `file-changed-externally` 를 발생시키지 않는다 — 프론트 리스너가 없어 dead emit 이었기 때문이다 (`app_watcher.go:43` 주석 참고).  
+> PostitViewer 가 외부 편집을 구독해야 할 때 이 줄을 복구하면 된다.
 
 ---
 
@@ -73,36 +60,15 @@ return () => {
 
 ---
 
-### ⚠️ 숨김 WebView2 인스턴스 — 가장 큰 개선 포인트
+### ✅ 숨김 WebView2 인스턴스 — Lazy 생성
 
-`InitWindowsAndTray()`는 **앱 시작 시 모든 노트의 WebView2 창을 즉시 생성**한다.  
-창이 `Hidden: true`여도 Windows는 WebView2 렌더러 프로세스를 유지한다.
-
-```go
-// app.go:524 — 모든 노트를 즉시 초기화
-func (a *App) InitWindowsAndTray() error {
-    for _, p := range postits {
-        if err := a.openPostitWindow(p.ID); err != nil { ... }
-    }
-}
-```
+`openPostitWindow` (`app_window.go`) 는 **첫 `TogglePostitWindow(id)` 호출 시점**에만 실행된다.  
+이전 버전의 `InitWindowsAndTray` (앱 시작 시 모든 노트의 WebView2 창을 즉시 생성) 는 **삭제**되었으며, 바인딩에서도 제거되어 더 이상 호출되지 않는다.
 
 **실질적 비용:**
-- 노트 N개 → WebView2 렌더러 N+2개(설정+팔레트) 상시 실행
-- 각 WebView2 프로세스는 기본 약 40–80 MB RAM 점유
-- Windows는 숨겨진 WebView2에도 주기적으로 GC, 업데이트 체크 등 내부 타이머를 실행함
-
-**개선 방안 (선택적):**
-1. **Lazy window creation**: `TogglePostitWindow()` 첫 호출 시 창을 만들도록 변경. 이미 `openPostitWindow` 내부에 중복 방지 로직이 있으므로 `InitWindowsAndTray` 자체를 제거하거나 비워도 된다.
-2. **WebView2 TrySuspendAsync**: Edge WebView2는 숨김 창을 일시 중단하는 API를 제공한다. Wails v3에서 직접 노출하지 않으나 future 버전에서 지원될 수 있다.
-
-```go
-// 개선안: InitWindowsAndTray에서 즉시 생성 제거
-// openPostitWindow는 TogglePostitWindow 첫 호출 때 자동으로 실행됨
-func (a *App) InitWindowsAndTray() error {
-    return nil // lazy creation으로 전환
-}
-```
+- 노트 N개 → WebView2 렌더러 2개(설정+팔레트) 상시 실행 + 열려 있는 노트 N개
+- 사용자가 토글한 적 없는 노트는 프로세스 자체가 생성되지 않음
+- `TogglePostitWindow` 가 호출되어 `openPostitWindow` 가 진입하면 맵에 등록하고, `deletePostIt` 가 호출되면 즉시 `closePostitWindow` 로 정리한다.
 
 ---
 
@@ -119,4 +85,20 @@ func (a *App) InitWindowsAndTray() error {
 | WebView2 (노트 N개) | Hidden, renderer 살아있음 | N × 소폭 |
 
 **결론**: 핫키·트레이·파일 감시 로직 자체는 완전히 이벤트 기반으로 잘 구현되어 있다.  
-개선이 필요한 부분은 시작 시 모든 WebView2 인스턴스를 미리 생성하는 구조이며, lazy creation으로 전환하면 백그라운드 전력 소모를 노트 수에 비례해 줄일 수 있다.
+2026-06 리팩터링으로 시작 시 모든 WebView2 인스턴스를 미리 생성하는 구조가 lazy creation으로 전환되었고, fsnotify watcher 가 정상 동작한다.
+
+---
+
+## 2026-06-08 리팩터링 (참고)
+
+대규모 파일이 도메인별로 분할되었다. AI 에이전트가 작업할 때 다음 매핑을 참조하라.
+
+| 변경 영역 | 이전 | 이후 |
+|---|---|---|
+| 백엔드 | `app.go` (840 줄) | `app.go` (lifecycle) + `app_config.go` + `app_postit.go` + `app_window.go` + `app_hotkey.go` + `app_watcher.go` + `app_files.go` + `app_palette.go` + `app_theme.go` + `app_basedir.go` + `app_autostart.go` |
+| 프론트 설정 | `Settings.tsx` (721 줄) | `Settings.tsx` (컨테이너) + `settings/{GeneralPage,KeymapPage,ThemePage,title-bar,surface-card}.tsx` + `settings/{use-window-state,use-hotkey-recorder,api}.ts` |
+| 프론트 팔레트 | `CommandPalette.tsx` (검색 로직 포함) | `CommandPalette.tsx` (UI) + `palette/search.ts` (매칭 알고리즘) |
+| 프론트 테마 | `lib/theme.js` (297 줄) | `lib/theme/{seeds,color,presets,apply,constants,index}.js` |
+| 데드 코드 | – | `watchFile()`, `InitWindowsAndTray()`, `InfoTile`, `file-changed-externally` emit 모두 제거 |
+| `getFileName` 중복 | 2곳 | `lib/path.ts` 단일 정의 |
+| import 별칭 | `../../bindings/...` | `@bindings/...` (tsconfig paths 에 추가) |

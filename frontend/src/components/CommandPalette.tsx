@@ -1,35 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
 import { CornerDownLeft, FileText, Search } from "lucide-react";
-import * as App from "../../bindings/mycheet/app";
-import type { PostIt } from "../../bindings/mycheet/models";
+import * as App from "@bindings/mycheet/app";
+import type { PostIt } from "@bindings/mycheet/models";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { getFileName } from "@/lib/path";
+import { comparePaletteEntries, getBestMatch, type RankedEntry } from "./palette/search";
 
-type MatchScore = {
-  prefixRank: number;
-  index: number;
-  length: number;
-  fieldPriority: number;
-};
-
-type RankedEntry = {
-  item: PostIt;
-  fileName: string;
-  originalIndex: number;
-  match: MatchScore | null;
-};
-
-type PaletteItem = PostIt & {
-  __fileName: string;
-};
-
-function getFileName(filePath?: string | null) {
-  return (filePath || "").replace(/\\/g, "/").split("/").pop() || "";
-}
+type PaletteItem = PostIt & { __fileName: string };
 
 export default function CommandPalette() {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -39,13 +21,9 @@ export default function CommandPalette() {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
 
-  const loadItems = async () => {
-    const nextItems = await App.GetPalettePostIts().catch(() => []);
-    setItems(Array.isArray(nextItems) ? nextItems : []);
-  };
-
   const resetPalette = async () => {
-    await loadItems();
+    const nextItems = await App.GetPalettePostIts().catch(() => []) as PostIt[];
+    setItems(nextItems);
     setQuery("");
     setActiveIndex(0);
     window.requestAnimationFrame(() => {
@@ -57,7 +35,7 @@ export default function CommandPalette() {
   useEffect(() => {
     resetPalette();
     const offOpened = Events.On("command-palette-opened", resetPalette);
-    const offUpdated = Events.On("postits-updated", loadItems);
+    const offUpdated = Events.On("postits-updated", resetPalette);
 
     return () => {
       offOpened?.();
@@ -123,12 +101,6 @@ export default function CommandPalette() {
     await App.TogglePalettePostIt(item.id);
   };
 
-  const hidePalette = async () => {
-    setQuery("");
-    setActiveIndex(0);
-    await App.HideCommandPalette().catch(() => {});
-  };
-
   const handleKeyDown = async (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -152,7 +124,9 @@ export default function CommandPalette() {
 
     if (event.key === "Escape") {
       event.preventDefault();
-      await hidePalette();
+      setQuery("");
+      setActiveIndex(0);
+      await App.HideCommandPalette().catch(() => undefined);
     }
   };
 
@@ -178,46 +152,19 @@ export default function CommandPalette() {
 
         <ScrollArea className="flex-1 px-2 py-2">
           {filteredItems.length === 0 ? (
-            <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-2 text-center text-muted-foreground">
-              <Search size={18} />
-              <div className="text-sm font-medium">검색 결과가 없습니다</div>
-              <div className="text-xs">다른 제목이나 경로로 다시 찾아보세요</div>
-            </div>
+            <EmptyState />
           ) : (
-            filteredItems.map((item, index) => {
-              const fileName = item.__fileName || getFileName(item.path) || item.title || "";
-              const isActive = index === activeIndex;
-
-              return (
-                <button
-                  key={item.id}
-                  ref={node => {
-                    itemRefs.current[index] = node;
-                  }}
-                  type="button"
-                  onClick={() => submitItem(item)}
-                  className={cn(
-                    "mb-1 flex w-full items-center gap-3 rounded-[8px] border px-4 py-3 text-left transition-colors last:mb-0",
-                    isActive
-                      ? "border-primary/40 bg-accent text-foreground"
-                      : "border-transparent text-muted-foreground hover:border-border hover:bg-accent/60 hover:text-foreground"
-                  )}>
-                  <div className={cn(
-                    "flex h-10 w-10 shrink-0 items-center justify-center rounded-[4px] border",
-                    isActive ? "border-primary/30 bg-primary/15 text-primary" : "border-border bg-muted text-muted-foreground"
-                  )}>
-                    <FileText size={16} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold text-foreground">{item.title || fileName}</div>
-                    <div className="mt-0.5 truncate text-xs text-muted-foreground">{fileName}</div>
-                  </div>
-                  <Badge variant="outline" className="hidden shrink-0 uppercase tracking-[0.22em] sm:inline-flex">
-                    toggle
-                  </Badge>
-                </button>
-              );
-            })
+            filteredItems.map((item, index) => (
+              <PaletteRow
+                key={item.id}
+                ref={node => {
+                  itemRefs.current[index] = node;
+                }}
+                item={item}
+                isActive={index === activeIndex}
+                onSelect={submitItem}
+              />
+            ))
           )}
         </ScrollArea>
 
@@ -234,49 +181,52 @@ export default function CommandPalette() {
   );
 }
 
-function getBestMatch(item: PostIt, fileName: string, query: string): MatchScore | null {
-  if (!query) return null;
-
-  const fields = [
-    { value: String(item.title || "").toLowerCase(), fieldPriority: 0 },
-    { value: String(fileName || "").toLowerCase(), fieldPriority: 1 },
-    { value: String(item.path || "").toLowerCase(), fieldPriority: 2 },
-  ];
-
-  const matches = fields
-    .map(field => scoreMatch(field.value, query, field.fieldPriority))
-    .filter((value): value is MatchScore => value !== null)
-    .sort(compareMatches);
-
-  return matches[0] || null;
+function EmptyState() {
+  return (
+    <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-2 text-center text-muted-foreground">
+      <Search size={18} />
+      <div className="text-sm font-medium">검색 결과가 없습니다</div>
+      <div className="text-xs">다른 제목이나 경로로 다시 찾아보세요</div>
+    </div>
+  );
 }
 
-function scoreMatch(value: string, query: string, fieldPriority: number): MatchScore | null {
-  const index = value.indexOf(query);
-  if (index === -1) return null;
-
-  const previous = index > 0 ? value[index - 1] : "";
-  const boundary = index === 0 || /[\s_./\\\-[\](){}]/.test(previous);
-  const prefixRank = index === 0 ? 0 : boundary ? 1 : 2;
-
-  return {
-    prefixRank,
-    index,
-    length: value.length,
-    fieldPriority,
-  };
-}
-
-function compareMatches(left: MatchScore, right: MatchScore) {
-  if (left.prefixRank !== right.prefixRank) return left.prefixRank - right.prefixRank;
-  if (left.fieldPriority !== right.fieldPriority) return left.fieldPriority - right.fieldPriority;
-  if (left.index !== right.index) return left.index - right.index;
-  return left.length - right.length;
-}
-
-function comparePaletteEntries(left: RankedEntry, right: RankedEntry, query: string) {
-  if (!query) return left.originalIndex - right.originalIndex;
-  const matchCompare = compareMatches(left.match!, right.match!);
-  if (matchCompare !== 0) return matchCompare;
-  return left.originalIndex - right.originalIndex;
-}
+const PaletteRow = ({
+  item,
+  isActive,
+  onSelect,
+  ref,
+}: {
+  item: PaletteItem;
+  isActive: boolean;
+  onSelect: (item: PaletteItem) => void;
+  ref: (node: HTMLButtonElement | null) => void;
+}) => {
+  const fileName = item.__fileName || getFileName(item.path) || item.title || "";
+  return (
+    <button
+      ref={ref}
+      type="button"
+      onClick={() => onSelect(item)}
+      className={cn(
+        "mb-1 flex w-full items-center gap-3 rounded-[8px] border px-4 py-3 text-left transition-colors last:mb-0",
+        isActive
+          ? "border-primary/40 bg-accent text-foreground"
+          : "border-transparent text-muted-foreground hover:border-border hover:bg-accent/60 hover:text-foreground"
+      )}>
+      <div className={cn(
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-[4px] border",
+        isActive ? "border-primary/30 bg-primary/15 text-primary" : "border-border bg-muted text-muted-foreground"
+      )}>
+        <FileText size={16} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-foreground">{item.title || fileName}</div>
+        <div className="mt-0.5 truncate text-xs text-muted-foreground">{fileName}</div>
+      </div>
+      <Badge variant="outline" className="hidden shrink-0 uppercase tracking-[0.22em] sm:inline-flex">
+        toggle
+      </Badge>
+    </button>
+  );
+};
